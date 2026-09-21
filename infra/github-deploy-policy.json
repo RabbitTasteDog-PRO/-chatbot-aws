@@ -1,0 +1,57 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "ecr:GetAuthorizationToken",
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ecr:BatchGetImage",
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:InitiateLayerUpload",
+        "ecr:UploadLayerPart",
+        "ecr:CompleteLayerUpload",
+        "ecr:PutImage"
+      ],
+      "Resource": "arn:aws:ecr:ap-northeast-2:ACCOUNT_ID:repository/BACKEND_REPOSITORY"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::FRONTEND_BUCKET"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject"
+      ],
+      "Resource": "arn:aws:s3:::FRONTEND_BUCKET/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "cloudfront:CreateInvalidation",
+        "cloudfront:GetInvalidation"
+      ],
+      "Resource": "arn:aws:cloudfront::ACCOUNT_ID:distribution/DISTRIBUTION_ID"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "ssm:SendCommand",
+      "Resource": [
+        "arn:aws:ssm:ap-northeast-2::document/AWS-RunShellScript",
+        "arn:aws:ec2:ap-northeast-2:ACCOUNT_ID:instance/INSTANCE_ID"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": "ssm:GetCommandInvocation",
+      "Resource": "*"
+    }
+  ]
+}

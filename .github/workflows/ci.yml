@@ -1,0 +1,24 @@
+name: Test chatbot
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Test delivery helpers
+        run: python3 -m unittest discover -s deploy -p 'test_*.py'
+      - name: Test backend
+        run: |
+          docker build -t chatbot-backend-test ./backend
+          docker run --rm chatbot-backend-test python manage.py test --settings=_chatbot.test_settings
+      - name: Test and build frontend
+        run: docker run --rm -v "$GITHUB_WORKSPACE/frontend:/app" -w /app node:24-alpine sh -c 'npm ci && npm test && npm run build'

@@ -1,0 +1,24 @@
+name: Inspect OIDC claims
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  inspect:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Print only aud and sub
+        shell: python
+        run: |
+          import base64, json, os
+          from urllib.request import Request, urlopen
+          base = os.environ['ACTIONS_ID_TOKEN_REQUEST_URL']
+          url = base + ('&' if '?' in base else '?') + 'audience=sts.amazonaws.com'
+          request = Request(url, headers={'Authorization': 'Bearer ' + os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']})
+          with urlopen(request, timeout=20) as response:
+              token = json.load(response)['value']
+          encoded = token.split('.')[1]
+          claims = json.loads(base64.urlsafe_b64decode(encoded + '=' * (-len(encoded) % 4)))
+          print(json.dumps({key: claims[key] for key in ('aud', 'sub')}, indent=2))

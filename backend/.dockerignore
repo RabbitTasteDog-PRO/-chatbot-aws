@@ -1,0 +1,10 @@
+.env
+.env.*
+*.pem
+*.key
+certs/
+__pycache__/
+*.py[cod]
+*.sqlite3
+.venv/
+.git/

@@ -1,0 +1,64 @@
+name: Deploy React and Django
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: chatbot-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main' && vars.AWS_DEPLOY_ROLE_ARN != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+      ECR_BACKEND_REPOSITORY: ${{ vars.ECR_BACKEND_REPOSITORY }}
+      EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+      ORIGIN_HOST: ${{ vars.ORIGIN_HOST }}
+      APP_URL: ${{ vars.APP_URL }}
+      FRONTEND_BUCKET: ${{ vars.FRONTEND_BUCKET }}
+      CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Test backend and build frontend
+        run: |
+          python3 -m unittest discover -s deploy -p 'test_*.py'
+          docker build -t chatbot-backend-test ./backend
+          docker run --rm chatbot-backend-test python manage.py test --settings=_chatbot.test_settings
+          docker run --rm -v "$GITHUB_WORKSPACE/frontend:/app" -w /app node:24-alpine sh -c 'npm ci && npm test && npm run build'
+      - name: AWS credentials through OIDC
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Build and push backend image
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$AWS_REGION" = ap-northeast-2
+          [[ "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]
+          [[ "$ECR_BACKEND_REPOSITORY" =~ ^[a-z0-9][a-z0-9._/-]+$ ]]
+          registry="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+          version="$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$registry"
+          docker build --platform linux/amd64 -t "$registry/$ECR_BACKEND_REPOSITORY:$version" ./backend
+          docker push "$registry/$ECR_BACKEND_REPOSITORY:$version"
+          printf 'RELEASE_TAG=%s\n' "$version" >> "$GITHUB_ENV"
+      - name: Deploy backend and verify HTTPS API
+        run: python3 deploy/ssm_deploy.py
+      - name: Upload frontend and invalidate CloudFront
+        run: bash deploy/frontend.sh "$FRONTEND_BUCKET" "$CLOUDFRONT_DISTRIBUTION_ID" frontend/dist
+      - name: Verify public frontend and API
+        run: python3 deploy/verify_public.py
+      - name: Record successful release
+        run: |
+          printf 'Backend tag: %s\nFrontend commit: %s\n' "$RELEASE_TAG" "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"

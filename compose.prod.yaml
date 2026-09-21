@@ -1,0 +1,51 @@
+name: chatbot-aws
+services:
+  backend:
+    image: ${BACKEND_IMAGE:?ECR 이미지 주소와 태그를 지정하세요}
+    restart: unless-stopped
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Django 비밀키를 설정하세요}
+      DJANGO_DEBUG: "false"
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:?EC2 DNS 또는 ALB 원본 도메인을 입력하세요}
+      DJANGO_CSRF_TRUSTED_ORIGINS: ${DJANGO_CSRF_TRUSTED_ORIGINS:?CloudFront HTTPS 주소를 입력하세요}
+      DJANGO_COOKIE_SECURE: "true"
+      DJANGO_TRUST_PROXY: "true"
+      DB_HOST: ${DB_HOST:?RDS 엔드포인트를 입력하세요}
+      DB_PORT: "3306"
+      DB_NAME: ${DB_NAME:-chatbot}
+      DB_USER: ${DB_USER:-chatbot}
+      DB_PASSWORD: ${DB_PASSWORD:?RDS 앱 계정 비밀번호를 입력하세요}
+      DB_SSL_CA: /app/certs/global-bundle.pem
+      CHATBOT_MODE: ${CHATBOT_MODE:-demo}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.6-luna}
+      S3_EXPORT_BUCKET: ${S3_EXPORT_BUCKET:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-ap-northeast-2}
+    volumes:
+      - type: bind
+        source: ./certs/global-bundle.pem
+        target: /app/certs/global-bundle.pem
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+  gateway:
+    image: nginx:1.28-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - type: bind
+        source: ./deploy/nginx.conf
+        target: /etc/nginx/conf.d/default.conf
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      backend:
+        condition: service_healthy

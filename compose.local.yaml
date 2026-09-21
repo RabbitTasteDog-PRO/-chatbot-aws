@@ -1,0 +1,60 @@
+name: chatbot-aws-local
+services:
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-chatbot}
+      MYSQL_USER: ${DB_USER:-chatbot}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?먼저 .env를 작성하세요}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?로컬 DB 루트 비밀번호를 설정하세요}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$${MYSQL_PASSWORD}\" mysql --protocol=TCP -h127.0.0.1 -u\"$${MYSQL_USER}\" \"$${MYSQL_DATABASE}\" -e 'SELECT 1' >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+  backend:
+    build: ./backend
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?먼저 .env를 작성하세요}
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,backend
+      DJANGO_CSRF_TRUSTED_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+      DJANGO_COOKIE_SECURE: "false"
+      DJANGO_TRUST_PROXY: "false"
+      DB_HOST: db
+      DB_NAME: ${DB_NAME:-chatbot}
+      DB_USER: ${DB_USER:-chatbot}
+      DB_PASSWORD: ${DB_PASSWORD:?먼저 .env를 작성하세요}
+      CHATBOT_MODE: ${CHATBOT_MODE:-demo}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.6-luna}
+      # 로컬 기본 실습은 AWS 인증 없이 진행. S3 기능은 EC2 IAM 역할로 검증.
+      S3_EXPORT_BUCKET: ""
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/', timeout=3).read()"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+  frontend:
+    image: node:24-alpine
+    working_dir: /app
+    command: sh -c "npm ci && npm run dev"
+    environment:
+      API_PROXY_TARGET: http://backend:8000
+    volumes:
+      - ./frontend:/app
+      - frontend_modules:/app/node_modules
+    ports:
+      - "127.0.0.1:5173:5173"
+    depends_on:
+      backend:
+        condition: service_healthy
+volumes:
+  mysql_data:
+  frontend_modules:
